@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ad Page Personalizer</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:sans-serif;background:#f5f5f5;
+         min-height:100vh;padding:40px 20px}
+    .container{max-width:600px;margin:0 auto;
+               background:#fff;border-radius:12px;
+               padding:32px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+    h1{font-size:22px;font-weight:600;margin-bottom:6px}
+    p.sub{color:#666;font-size:14px;margin-bottom:28px}
+    label{display:block;font-size:13px;font-weight:500;
+          margin-bottom:6px;margin-top:20px;color:#333}
+    input[type="url"],input[type="text"]{
+          width:100%;padding:10px 12px;border:1px solid #ddd;
+          border-radius:8px;font-size:14px;outline:none}
+    input:focus{border-color:#534AB7}
+
+    .tab-row{display:flex;gap:0;margin-top:20px;
+             border:1px solid #ddd;border-radius:8px;overflow:hidden}
+    .tab{flex:1;padding:9px;text-align:center;font-size:13px;
+         font-weight:500;cursor:pointer;background:#f5f5f5;
+         color:#666;border:none;transition:all .2s}
+    .tab.active{background:#534AB7;color:#fff}
+
+    .tab-panel{display:none;margin-top:12px}
+    .tab-panel.active{display:block}
+
+    .upload-area{border:2px dashed #ddd;border-radius:8px;
+                 padding:28px;text-align:center;cursor:pointer;
+                 transition:border-color .2s;position:relative}
+    .upload-area:hover{border-color:#534AB7}
+    .upload-area input{position:absolute;inset:0;
+                       opacity:0;cursor:pointer;width:100%;height:100%}
+    .upload-area p{font-size:13px;color:#888;margin-top:6px}
+    .upload-area .icon{font-size:28px;margin-bottom:4px}
+    #preview-img{width:100%;max-height:180px;object-fit:contain;
+                 border-radius:8px;margin-top:10px;display:none;
+                 border:1px solid #eee}
+
+    button.main{margin-top:24px;width:100%;padding:13px;
+           background:#534AB7;color:#fff;border:none;
+           border-radius:8px;font-size:15px;font-weight:500;
+           cursor:pointer;transition:background .2s}
+    button.main:hover{background:#3C3489}
+    button.main:disabled{background:#aaa;cursor:not-allowed}
+
+    #status{margin-top:16px;font-size:13px;color:#666;
+            text-align:center;min-height:20px}
+    .steps{display:flex;justify-content:center;gap:8px;
+           margin-top:12px;flex-wrap:wrap}
+    .step-pill{font-size:11px;padding:3px 10px;
+               border-radius:20px;background:#f0f0f0;color:#999}
+    .step-pill.active{background:#EDE9FF;color:#534AB7;font-weight:500}
+    .step-pill.done{background:#E1F5EE;color:#085041}
+
+    #summary{margin-top:20px;background:#f9f9f9;border-radius:8px;
+             padding:16px;font-size:13px;line-height:1.7;
+             white-space:pre-wrap;display:none;
+             border-left:3px solid #534AB7}
+    #result{margin-top:20px;display:none}
+    #result h3{font-size:14px;font-weight:500;margin-bottom:10px}
+    iframe{width:100%;height:560px;border:1px solid #ddd;border-radius:8px}
+    .error-box{color:#c0392b;background:#fdf0f0;padding:10px 14px;
+               border-radius:8px;font-size:13px;margin-top:12px}
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Ad Page Personalizer</h1>
+  <p class="sub">Upload your ad creative or paste a URL — we'll personalize your landing page to match.</p>
+
+  <!-- AD INPUT with tabs -->
+  <label>Ad creative</label>
+  <div class="tab-row">
+    <button class="tab active" onclick="switchTab('upload')">Upload image</button>
+    <button class="tab" onclick="switchTab('url')">Paste URL</button>
+  </div>
+
+  <!-- Upload panel -->
+  <div class="tab-panel active" id="panel-upload">
+    <div class="upload-area" id="drop-area">
+      <input type="file" id="adFile" accept="image/*" onchange="handleFile(this)">
+      <div class="icon">+</div>
+      <strong style="font-size:13px">Click to upload</strong>
+      <p>PNG, JPG, WEBP up to 5MB</p>
+    </div>
+    <img id="preview-img" alt="Ad preview">
+  </div>
+
+  <!-- URL panel -->
+  <div class="tab-panel" id="panel-url">
+    <input type="url" id="adUrl"
+      placeholder="https://example.com/ad-banner.jpg"
+      style="margin-top:4px">
+  </div>
+
+  <!-- Landing page -->
+  <label>Landing page URL</label>
+  <input type="url" id="pageUrl"
+    placeholder="https://yoursite.com/landing">
+
+  <button class="main" id="btn" onclick="runPipeline()">
+    Personalize this page
+  </button>
+
+  <div id="status"></div>
+  <div class="steps" id="steps" style="display:none">
+    <span class="step-pill" id="p1">Scraping page</span>
+    <span class="step-pill" id="p2">Analyzing ad</span>
+    <span class="step-pill" id="p3">Planning changes</span>
+    <span class="step-pill" id="p4">Building page</span>
+  </div>
+  <div id="error-box"></div>
+  <div id="summary"></div>
+  <div id="result">
+    <h3>Personalized preview</h3>
+    <iframe id="preview"></iframe>
+  </div>
+</div>
+
+<script>
+const WEBHOOK = 'https://hardikopt.app.n8n.cloud/webhook/4e55630e-faa6-4530-b7a5-244ceeed52ba';
+
+let activeTab = 'upload';
+let base64Data = null;
+let base64MimeType = null;
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('panel-' + tab).classList.add('active');
+}
+
+function handleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) {
+    alert('File too large. Please use an image under 5MB.');
+    return;
+  }
+  base64MimeType = file.type;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    base64Data = e.target.result.split(',')[1];
+    const img = document.getElementById('preview-img');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    document.getElementById('drop-area').style.borderColor = '#534AB7';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runPipeline() {
+  const page = document.getElementById('pageUrl').value.trim();
+  if (!page) { alert('Please enter a landing page URL'); return; }
+
+  let adUrl = null;
+  if (activeTab === 'url') {
+    adUrl = document.getElementById('adUrl').value.trim();
+    if (!adUrl) { alert('Please paste an ad image URL'); return; }
+  } else {
+    if (!base64Data) { alert('Please upload an ad image'); return; }
+  }
+
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  document.getElementById('steps').style.display = 'flex';
+  document.getElementById('error-box').innerHTML = '';
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('status').textContent = 'Starting pipeline...';
+
+  const pills = ['p1','p2','p3','p4'];
+  let current = 0;
+  const interval = setInterval(() => {
+    if (current > 0)
+      document.getElementById(pills[current-1]).className = 'step-pill done';
+    if (current < pills.length) {
+      document.getElementById(pills[current]).className = 'step-pill active';
+      current++;
+    }
+  }, 8000);
+
+  try {
+    const payload = { page_url: page };
+    if (adUrl) {
+      payload.ad_url = adUrl;
+      payload.ad_type = 'url';
+    } else {
+      payload.ad_base64 = base64Data;
+      payload.ad_mime_type = base64MimeType;
+      payload.ad_type = 'base64';
+    }
+
+    const res = await fetch(WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    clearInterval(interval);
+    pills.forEach(p =>
+      document.getElementById(p).className = 'step-pill done'
+    );
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.message || 'Pipeline failed');
+
+    document.getElementById('status').textContent =
+      `Done! ${data.change_count} changes applied.`;
+
+    if (data.summary) {
+      document.getElementById('summary').textContent = data.summary;
+      document.getElementById('summary').style.display = 'block';
+    }
+
+    const blob = new Blob([data.html], { type: 'text/html' });
+    document.getElementById('preview').src = URL.createObjectURL(blob);
+    document.getElementById('result').style.display = 'block';
+
+  } catch(e) {
+    clearInterval(interval);
+    document.getElementById('status').textContent = '';
+    document.getElementById('error-box').innerHTML =
+      `<div class="error-box">Error: ${e.message}. Please try again.</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Personalize this page';
+  }
+}
+</script>
+</body>
+</html>
